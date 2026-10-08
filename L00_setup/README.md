@@ -71,17 +71,20 @@ docker run --rm -it ubuntu:24.04 bash -c 'uname -a; cat /etc/os-release | head -
 ### 3. Get the lab repository
 
 ```bash
-# git (recommended)
-git clone <URL given by your instructor> data-engineer-course
-cd data-engineer-course/labs
-# or: unzip the archive from the course page and cd into labs/
+# git (recommended) — the folder MUST be named "labs"; all lab instructions use `cd labs/...`
+git clone https://github.com/HuynhHoangPhuc/data_engineering_labs.git labs
+cd labs
+# or: unzip the archive from the course page, rename the folder to labs/ and cd into it
 ls
 ```
 
 ```
-L00_setup/  L01_hdfs/  L02_mapreduce/  ...  L12_dbt/  capstone/
+L00_setup/  L01_hdfs/  L02_mapreduce/  ...  L12_dbt/  L13_data_quality/  capstone/
 datasets/   images/    README.md
 ```
+
+Run every later `cd labs/...` command from the folder that **contains** `labs/`
+(e.g. your home directory). Get updates with `git pull` inside `labs/`.
 
 ### 4. Download the datasets
 

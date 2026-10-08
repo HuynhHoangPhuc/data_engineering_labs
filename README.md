@@ -12,6 +12,20 @@ Every lab is a self-contained Docker Compose stack that runs on a laptop with **
 * ~20 GB free disk (images + data), internet access for the first run of each lab.
 * Start with **[L00_setup](L00_setup/README.md)** — it installs/checks everything and downloads the datasets.
 
+## Get the labs
+
+Clone the repository **into a folder named `labs`** — every lab's instructions assume this
+(`cd labs/L01_hdfs`, …):
+
+```bash
+git clone https://github.com/HuynhHoangPhuc/data_engineering_labs.git labs
+cd labs
+bash datasets/download_taxi.sh     # NYC taxi 2024-01 + zone lookup (~48 MB, git-ignored)
+```
+
+On Windows, clone inside WSL 2 (e.g. `~/labs`), not under `C:\`. To get updates later:
+`cd labs && git pull`.
+
 ## Lab index
 
 | ID | Folder | Module | What you do | Main stack |
@@ -26,7 +40,7 @@ Every lab is a self-contained Docker Compose stack that runs on a laptop with **
 | L07 | [L07_kafka](L07_kafka/) | 6 Kafka | 3-broker KRaft cluster, Python producer/consumer, key ordering, consumer-group rebalance, kill a broker | Kafka 4.x |
 | L08 | [L08_cdc_debezium](L08_cdc_debezium/) | 3/6 CDC | Debezium Postgres → Kafka change events (insert/update/delete) | Debezium, Kafka, Postgres |
 | L09 | [L09_structured_streaming](L09_structured_streaming/) | 7 Streaming | Wikimedia edits → Kafka → windowed counts with watermark → Parquet; checkpoint recovery | Spark Structured Streaming, Kafka |
-| L10 | [L10_airflow](L10_airflow/) | 8 Orchestration | Daily DAG download → Spark → quality check → publish; backfill, retries, Assets | Airflow 3.x |
+| L10 | [L10_airflow](L10_airflow/) | 8 Orchestration | Daily DAG download → aggregate (DuckDB) → quality check → publish; backfill, retries, Assets | Airflow 3.x, DuckDB |
 | L11 | [L11_lakehouse_iceberg](L11_lakehouse_iceberg/) | 9 Lakehouse | Spark writes Iceberg on object storage, Trino reads; MERGE INTO, time travel, schema evolution | Iceberg, Trino, S3-compatible store |
 | L12 | [L12_dbt](L12_dbt/) | 10 Modeling | Star schema from Olist with dbt, tests, docs | dbt-core |
 | L13 | [L13_data_quality](L13_data_quality/) | 11 Data quality & ops | Great Expectations (GX Core 1.x) suite + checkpoint + Data Docs on taxi data; freshness/volume monitor with webhook alerts; OpenLineage lineage from a Spark job into Marquez; quality gates that block publishing | GX Core 1.24, DuckDB, Marquez 0.50, Spark 4.1.3 + openlineage-spark 1.53 |
