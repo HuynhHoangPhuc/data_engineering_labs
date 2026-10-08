@@ -1,0 +1,114 @@
+# L08 - Change Data Capture: Postgres (Olist OLTP) -> Debezium (Kafka Connect) -> Kafka
+#
+# Memory budget (~1.9 GB):
+#   postgres ~150 MB | kafka (1 node, KRaft combined) ~500 MB | connect ~700 MB
+#   optional: kafka-ui ~300 MB (profile "ui"), apicurio registry ~350 MB (profile "avro")
+
+services:
+  postgres:
+    image: postgres:18.6
+    container_name: l08-postgres
+    environment:
+      POSTGRES_USER: olist
+      POSTGRES_PASSWORD: olist
+      POSTGRES_DB: olist
+    # Logical decoding is what makes CDC possible: WAL records carry full row changes.
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_wal_senders=10
+      # safety net for the lab: a stuck slot can retain at most 1 GB of WAL
+      - -c
+      - max_slot_wal_keep_size=1GB
+    ports: ["5432:5432"]
+    volumes:
+      - ../datasets/olist/init:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U olist -d olist"]
+      interval: 5s
+      retries: 20
+    mem_limit: 512m
+
+  kafka:
+    image: apache/kafka:4.3.1
+    container_name: l08-kafka
+    hostname: kafka
+    ports: ["9092:9092"]
+    environment:
+      CLUSTER_ID: "rxMtEK2ISNeCh2dwP87CVw"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_LISTENERS: "INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:29093"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka:19092,EXTERNAL://localhost:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: "-Xms384m -Xmx384m"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:19092 >/dev/null 2>&1"]
+      interval: 10s
+      retries: 20
+    mem_limit: 768m
+
+  connect:
+    image: quay.io/debezium/connect:3.6.3.Final
+    container_name: l08-connect
+    ports: ["8083:8083"]
+    depends_on:
+      kafka: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+    environment:
+      BOOTSTRAP_SERVERS: "kafka:19092"
+      GROUP_ID: "l08-connect-cluster"
+      CONFIG_STORAGE_TOPIC: "_connect_configs"
+      OFFSET_STORAGE_TOPIC: "_connect_offsets"
+      STATUS_STORAGE_TOPIC: "_connect_statuses"
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      HEAP_OPTS: "-Xms256m -Xmx512m"
+      # Only used by the Avro stretch challenge (profile "avro")
+      ENABLE_APICURIO_CONVERTERS: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8083/ >/dev/null"]
+      interval: 10s
+      retries: 30
+    mem_limit: 1g
+
+  # Optional: docker compose --profile ui up -d
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.5.0
+    container_name: l08-kafka-ui
+    profiles: ["ui"]
+    ports: ["8080:8080"]
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "l08-cdc"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:19092"
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: "debezium"
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: "http://connect:8083"
+      JAVA_OPTS: "-Xmx256m"
+    mem_limit: 512m
+    depends_on: [kafka]
+
+  # Optional stretch (Avro + schema registry): docker compose --profile avro up -d
+  registry:
+    image: apicurio/apicurio-registry:3.3.3
+    container_name: l08-registry
+    profiles: ["avro"]
+    ports: ["8081:8080"]
+    environment:
+      JAVA_OPTS: "-Xmx256m"
+    mem_limit: 512m
+
+volumes:
+  pgdata:

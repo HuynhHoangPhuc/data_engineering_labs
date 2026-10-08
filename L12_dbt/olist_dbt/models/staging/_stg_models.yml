@@ -1,0 +1,64 @@
+version: 2
+
+models:
+  - name: stg_olist__customers
+    description: "Cleaned customers: zip padded to 5 chars, city in Title Case, state upper-case."
+    columns:
+      - name: customer_id
+        description: "Natural key of the customer (per order!)"
+        data_tests: [unique, not_null]
+      - name: customer_state
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('brazil_states')
+                field: state_code
+
+  - name: stg_olist__sellers
+    columns:
+      - name: seller_id
+        data_tests: [unique, not_null]
+
+  - name: stg_olist__products
+    columns:
+      - name: product_id
+        data_tests: [unique, not_null]
+
+  - name: stg_olist__orders
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: customer_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_olist__customers')
+                field: customer_id
+      - name: order_status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['created', 'approved', 'invoiced', 'processing', 'shipped', 'delivered', 'canceled', 'unavailable']
+
+  - name: stg_olist__order_items
+    columns:
+      - name: order_item_key
+        data_tests: [unique, not_null]
+      - name: price
+        data_tests: [not_null, positive_value]
+      - name: freight_value
+        data_tests: [positive_value]
+
+  - name: stg_olist__order_payments
+    columns:
+      - name: order_payment_key
+        data_tests: [unique, not_null]
+      - name: payment_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['credit_card', 'boleto', 'voucher', 'debit_card', 'not_defined']
+      - name: payment_value
+        data_tests: [positive_value]

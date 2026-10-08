@@ -1,0 +1,11 @@
+{
+  "identities": [
+    {
+      "name": "lakehouse",
+      "credentials": [
+        { "accessKey": "lakeadmin", "secretKey": "lakepassword" }
+      ],
+      "actions": ["Admin", "Read", "List", "Tagging", "Write"]
+    }
+  ]
+}

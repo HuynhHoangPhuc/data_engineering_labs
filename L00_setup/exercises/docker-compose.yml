@@ -1,0 +1,27 @@
+# L00 Foundations exercises - (b) SQL on the Olist OLTP database. ~60 MB RAM.
+#   docker compose up -d
+#   docker compose exec postgres psql -U olist          # interactive psql
+#   docker compose down -v                              # stop + delete the data volume
+name: l00_exercises
+
+services:
+  postgres:
+    image: postgres:18.6
+    container_name: l00-postgres
+    environment:
+      POSTGRES_USER: olist
+      POSTGRES_PASSWORD: olist
+      POSTGRES_DB: olist
+    ports: ["5432:5432"]
+    volumes:
+      - ../../datasets/olist/init:/docker-entrypoint-initdb.d:ro   # schema + synthetic seed, loaded on first start
+      - ./b_sql:/sql:ro                                            # your query files, run with psql -f /sql/...
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U olist -d olist"]
+      interval: 5s
+      retries: 20
+    mem_limit: 256m
+
+volumes:
+  pgdata:

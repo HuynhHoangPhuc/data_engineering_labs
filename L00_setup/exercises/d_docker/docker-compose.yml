@@ -1,0 +1,22 @@
+# L00 exercise (d) - a two-service stack to practise compose up/down, ports, volumes, logs, stats.
+#   cd d_docker && docker compose up -d && docker compose ps
+name: l00_docker
+
+services:
+  web:                                   # static web server, your folder bind-mounted read-only
+    image: python:3.12-alpine
+    command: ["python", "-m", "http.server", "8000", "--directory", "/www"]
+    ports: ["8000:8000"]                 # host:container
+    volumes:
+      - ./www:/www:ro                    # bind mount: edit index.html on the laptop, refresh the browser
+    mem_limit: 64m
+
+  counter:                               # writes a line every 2 s into a NAMED volume
+    image: python:3.12-alpine
+    command: ["sh", "-c", "while true; do date -u +%FT%TZ >> /data/ticks.txt; sleep 2; done"]
+    volumes:
+      - ticks:/data                      # named volume: survives `down`, deleted by `down -v`
+    mem_limit: 32m
+
+volumes:
+  ticks:

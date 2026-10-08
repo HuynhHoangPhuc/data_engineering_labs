@@ -1,0 +1,38 @@
+version: 2
+
+sources:
+  - name: olist
+    description: "Olist OLTP database (Postgres, schema public) - loaded by labs/datasets/olist/init"
+    database: olist
+    schema: public
+    # Source freshness: is the OLTP data still arriving?  -> dbt source freshness
+    loaded_at_field: updated_at
+    config:
+      freshness:
+        warn_after: {count: 1, period: day}
+        error_after: {count: 7, period: day}
+    tables:
+      - name: customers
+        description: "One row per customer_id (a person can have several customer_ids -> customer_unique_id)"
+        columns:
+          - name: customer_id
+            data_tests: [unique, not_null]
+      - name: sellers
+        columns:
+          - name: seller_id
+            data_tests: [unique, not_null]
+      - name: products
+        columns:
+          - name: product_id
+            data_tests: [unique, not_null]
+      - name: orders
+        description: "Order header. updated_at is bumped by a trigger on every UPDATE."
+        columns:
+          - name: order_id
+            data_tests: [unique, not_null]
+      - name: order_items
+        description: "Order lines, PK (order_id, order_item_id)"
+      - name: order_payments
+        description: "Payments, PK (order_id, payment_sequential); an order can be paid with several vouchers + a card"
+        config:
+          freshness: null        # payments are checked through orders

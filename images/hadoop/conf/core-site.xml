@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!-- Base core-site for all course stacks -->
+<configuration>
+  <!-- All clients talk to the NameNode container on port 8020 -->
+  <property><name>fs.defaultFS</name><value>hdfs://namenode:8020</value></property>
+  <!-- Web UI acts as root so the file browser can read everything -->
+  <property><name>hadoop.http.staticuser.user</name><value>root</value></property>
+  <!-- Allow HiveServer2 / Sqoop to impersonate users (lab only) -->
+  <property><name>hadoop.proxyuser.root.hosts</name><value>*</value></property>
+  <property><name>hadoop.proxyuser.root.groups</name><value>*</value></property>
+  <property><name>hadoop.proxyuser.hive.hosts</name><value>*</value></property>
+  <property><name>hadoop.proxyuser.hive.groups</name><value>*</value></property>
+  <property><name>hadoop.tmp.dir</name><value>/hadoop/tmp</value></property>
+</configuration>

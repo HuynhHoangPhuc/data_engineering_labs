@@ -1,0 +1,26 @@
+# L05 — PySpark basics: one Spark 4.1.3 container in local mode (driver = executor, 4 cores, 2 GB).
+#   docker compose up -d
+#   docker compose exec spark spark-submit /lab/src/l05_basics.py        # your code
+#   docker compose exec spark pyspark                                   # interactive shell
+#   Spark UI: http://localhost:4040 (only while an application is running)
+name: l05_pyspark
+
+services:
+  spark:
+    image: spark:4.1.3-python3          # official Docker image (multi-arch: arm64 + amd64), Java 17, Python 3.10
+    hostname: spark
+    command: ["bash", "-c", "mkdir -p /tmp/spark-events && sleep infinity"]
+    user: "185"
+    environment:
+      HOME: /tmp
+      PYSPARK_PYTHON: python3
+      PATH: /opt/spark/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    working_dir: /lab
+    ports:
+      - "4040:4040"   # Spark UI of the running application
+      - "4041:4041"   # a 2nd application (e.g. pyspark shell + spark-submit at the same time)
+    volumes:
+      - ../datasets:/datasets:ro
+      - ./:/lab
+      - ./conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
+      - ./conf/log4j2.properties:/opt/spark/conf/log4j2.properties:ro

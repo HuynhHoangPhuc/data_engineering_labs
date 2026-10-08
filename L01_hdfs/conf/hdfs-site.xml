@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!-- L01/L02 hdfs-site: 3 DataNodes, fast dead-node detection -->
+<configuration>
+  <!-- 3 DataNodes -> default 3 replicas -->
+  <property><name>dfs.replication</name><value>3</value></property>
+  <!-- DataNode heartbeat every 3 s (default) -->
+  <property><name>dfs.heartbeat.interval</name><value>3</value></property>
+  <!-- LAB TUNING: DataNode declared dead after 2*recheck + 10*heartbeat = 2*30s + 30s = 90 s (default is 10.5 min!) -->
+  <property><name>dfs.namenode.heartbeat.recheck-interval</name><value>30000</value></property>
+  <!-- Mark a silent DataNode "stale" after 15 s -->
+  <property><name>dfs.namenode.stale.datanode.interval</name><value>15000</value></property>
+  <!-- How often the NameNode schedules re-replication work -->
+  <property><name>dfs.namenode.redundancy.interval.seconds</name><value>3</value></property>
+  <!-- NameNode metadata (fsimage + edits) lives in a Docker volume -->
+  <property><name>dfs.namenode.name.dir</name><value>file:///hadoop/dfs/name</value></property>
+  <!-- Block files on each DataNode -->
+  <property><name>dfs.datanode.data.dir</name><value>file:///hadoop/dfs/data</value></property>
+  <!-- Lab convenience: no HDFS permission checks (NEVER in production) -->
+  <property><name>dfs.permissions.enabled</name><value>false</value></property>
+  <property><name>dfs.namenode.rpc-bind-host</name><value>0.0.0.0</value></property>
+  <property><name>dfs.namenode.servicerpc-bind-host</name><value>0.0.0.0</value></property>
+  <property><name>dfs.namenode.http-bind-host</name><value>0.0.0.0</value></property>
+  <!-- Docker IPs do not reverse-resolve -->
+  <property><name>dfs.namenode.datanode.registration.ip-hostname-check</name><value>false</value></property>
+  <!-- Leave safe mode 5 s after the block threshold is reached (default 30 s) -->
+  <property><name>dfs.namenode.safemode.extension</name><value>5000</value></property>
+  <property><name>dfs.webhdfs.enabled</name><value>true</value></property>
+</configuration>

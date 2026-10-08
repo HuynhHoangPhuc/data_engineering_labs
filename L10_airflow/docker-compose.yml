@@ -1,0 +1,123 @@
+# L10 - Apache Airflow 3.3 - minimal LocalExecutor stack for an 8 GB laptop.
+#
+# Trimmed from the official docker-compose.yaml (CeleryExecutor + Redis + worker + triggerer + flower):
+#   - LocalExecutor: tasks run as sub-processes of the scheduler -> no Redis, no Celery worker
+#   - 1 API-server worker, parallelism 4
+#   - triggerer only under profile "triggerer" (needed for deferrable operators, not used here)
+#   - SimpleAuthManager with "everyone is admin" -> no login screen (LAB ONLY, never in production)
+# Memory: postgres ~100 MB | api-server ~450 MB | scheduler ~400 MB (+ tasks) | dag-processor ~250 MB  => ~1.3-1.8 GB
+
+x-airflow-common: &airflow-common
+  build: .
+  image: de-labs/airflow:3.3.2-l10
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__PARALLELISM: 4
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-apiserver:8080/execution/"
+    AIRFLOW__API_AUTH__JWT_SECRET: "l10-lab-jwt-secret-change-me"
+    AIRFLOW__API__SECRET_KEY: "l10-lab-secret-key-change-me"
+    AIRFLOW__API__WORKERS: 1
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: 30     # pick up new DAG files within 30 s
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    # used by the DAGs
+    LAB_DATA_DIR: /opt/airflow/data
+    SHARED_TAXI_DIR: /opt/airflow/datasets/taxi
+    TLC_BASE_URL: "https://d37ci6vzurychx.cloudfront.net"
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./data:/opt/airflow/data
+    - ../datasets/data/taxi:/opt/airflow/datasets/taxi:ro
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on: &airflow-depends
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:18.6
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 10
+    mem_limit: 256m
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /opt/airflow/{logs,dags,data}
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/{logs,dags,data}
+        /entrypoint airflow version
+    environment:
+      <<: *airflow-env
+      _AIRFLOW_DB_MIGRATE: "true"
+    user: "0:0"
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports: ["8080:8080"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-depends
+      airflow-init: {condition: service_completed_successfully}
+    mem_limit: 1g
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-depends
+      airflow-init: {condition: service_completed_successfully}
+    mem_limit: 1536m
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-depends
+      airflow-init: {condition: service_completed_successfully}
+    mem_limit: 768m
+
+  # Only needed for deferrable operators / sensors in "reschedule-free" mode:
+  #   docker compose --profile triggerer up -d
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    profiles: ["triggerer"]
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-depends
+      airflow-init: {condition: service_completed_successfully}
+    mem_limit: 512m
+
+volumes:
+  airflow-db:

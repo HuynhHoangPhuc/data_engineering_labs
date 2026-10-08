@@ -1,0 +1,96 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: "Calendar 2016-2026, one row per day. date_key = yyyymmdd."
+    columns:
+      - name: date_key
+        data_tests: [unique, not_null]
+
+  - name: dim_customers
+    description: "Customer dimension (type-1: latest values only). See snapshots/ for type-2 history."
+    columns:
+      - name: customer_key
+        description: "= customer_id from the source (one per order in Olist)"
+        data_tests: [unique, not_null]
+      - name: customer_region
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['North', 'Northeast', 'Center-West', 'Southeast', 'South']
+
+  - name: dim_sellers
+    columns:
+      - name: seller_key
+        data_tests: [unique, not_null]
+
+  - name: dim_products
+    columns:
+      - name: product_key
+        data_tests: [unique, not_null]
+      - name: category_name
+        data_tests: [not_null]
+
+  - name: fact_orders
+    description: "One row per order with item, freight and payment measures."
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: customer_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_key
+      - name: order_date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+      - name: order_status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['created', 'approved', 'invoiced', 'processing', 'shipped', 'delivered', 'canceled', 'unavailable']
+      - name: payment_value
+        data_tests: [positive_value]
+      - name: delivery_days
+        data_tests: [positive_value]
+
+  - name: fact_order_items
+    description: "One row per order line; links to product and seller dimensions."
+    columns:
+      - name: order_item_key
+        data_tests: [unique, not_null]
+      - name: product_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_key
+      - name: seller_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_sellers')
+                field: seller_key
+      - name: customer_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_key
+      - name: order_date_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+      - name: line_total
+        data_tests:
+          - positive_value:
+              arguments:
+                allow_zero: false

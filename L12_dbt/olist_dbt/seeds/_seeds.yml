@@ -1,0 +1,13 @@
+version: 2
+
+seeds:
+  - name: product_category_name_translation
+    description: "Portuguese -> English product category names (subset of the Kaggle translation file)"
+    columns:
+      - name: product_category_name
+        data_tests: [unique, not_null]
+  - name: brazil_states
+    description: "Brazilian federative units (UF) with IBGE macro-region"
+    columns:
+      - name: state_code
+        data_tests: [unique, not_null]

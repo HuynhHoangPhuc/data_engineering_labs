@@ -1,0 +1,3 @@
+# laptop-side tools for the capstone (Python 3.10-3.13)
+pyspark-client==4.1.3        # thin Spark Connect client, must match the server version
+psycopg2-binary>=2.9         # simulate_shop.py

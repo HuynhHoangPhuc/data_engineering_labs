@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<!-- Mounted into the Hive containers (HIVE_CUSTOM_CONF_DIR): makes HDFS the default file system,
+     so the warehouse, scratch dirs and LOCATION '/data/...' all live on the lab's HDFS. -->
+<configuration>
+  <property><name>fs.defaultFS</name><value>hdfs://namenode:8020</value></property>
+  <property><name>hadoop.proxyuser.hive.hosts</name><value>*</value></property>
+  <property><name>hadoop.proxyuser.hive.groups</name><value>*</value></property>
+</configuration>

@@ -1,0 +1,25 @@
+# dbt looks for profiles.yml in the current project directory first (then ~/.dbt/).
+# Connection values can be overridden with environment variables.
+olist:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DBT_HOST', 'localhost') }}"
+      port: "{{ env_var('DBT_PORT', '5432') | as_number }}"
+      user: "{{ env_var('DBT_USER', 'olist') }}"
+      password: "{{ env_var('DBT_PASSWORD', 'olist') }}"
+      dbname: "{{ env_var('DBT_DBNAME', 'olist') }}"
+      schema: analytics          # default schema (only used by models without +schema)
+      threads: 4
+    # CI target: same database, throwaway schemas (ci, ci_staging, ci_marts, ...) - see macros/generate_schema_name.sql
+    #   dbt build --target ci
+    ci:
+      type: postgres
+      host: "{{ env_var('DBT_HOST', 'localhost') }}"
+      port: "{{ env_var('DBT_PORT', '5432') | as_number }}"
+      user: "{{ env_var('DBT_USER', 'olist') }}"
+      password: "{{ env_var('DBT_PASSWORD', 'olist') }}"
+      dbname: "{{ env_var('DBT_DBNAME', 'olist') }}"
+      schema: ci
+      threads: 4

@@ -1,0 +1,11 @@
+-- TODO (step 6): Grain = ONE ROW PER ORDER.
+-- Join stg_olist__orders with int_order_items_summary and int_order_payments_summary (left joins!)
+-- Columns expected by _marts.yml and the singular test:
+--   order_id, customer_key, order_date_key (yyyymmdd int), order_status, purchased_at, approved_at,
+--   delivered_to_customer_at, estimated_delivery_at,
+--   item_count, seller_count, items_value, freight_value, payment_value (coalesce to 0),
+--   payment_count, main_payment_type, max_installments,
+--   delivery_days  (numeric: (delivered - purchased) in days, null if not delivered),
+--   is_late        (delivered date > estimated date + var('late_threshold_days'); null if not delivered)
+-- Why must items and payments be aggregated BEFORE joining? (checkpoint question 3)
+select 1 as todo

@@ -1,0 +1,30 @@
+{
+  "name": "olist-postgres-avro",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "olist",
+    "database.password": "olist",
+    "database.dbname": "olist",
+
+    "topic.prefix": "olistavro",
+    "table.include.list": "public.customers",
+    "plugin.name": "pgoutput",
+    "slot.name": "debezium_olist_avro",
+    "publication.name": "dbz_olist_avro",
+    "publication.autocreate.mode": "filtered",
+
+    "key.converter": "io.apicurio.registry.utils.converter.AvroConverter",
+    "key.converter.apicurio.registry.url": "http://registry:8080/apis/registry/v3",
+    "key.converter.apicurio.registry.auto-register": "true",
+    "key.converter.apicurio.registry.find-latest": "true",
+    "value.converter": "io.apicurio.registry.utils.converter.AvroConverter",
+    "value.converter.apicurio.registry.url": "http://registry:8080/apis/registry/v3",
+    "value.converter.apicurio.registry.auto-register": "true",
+    "value.converter.apicurio.registry.find-latest": "true",
+
+    "decimal.handling.mode": "string"
+  }
+}

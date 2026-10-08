@@ -1,0 +1,36 @@
+# Downloaded / generated datasets (large; re-create with labs/datasets/download_taxi.sh)
+datasets/data/
+*.parquet.part
+
+# Lab outputs written to bind mounts
+**/output/
+**/spark-warehouse/
+**/metastore_db/
+**/derby.log
+**/checkpoints/
+L02_mapreduce/work/
+L04_ingestion/work/
+L05_pyspark_basics/output/
+L06_spark_tuning/output/
+L06_spark_tuning/results/*.csv
+!L06_spark_tuning/results/.gitkeep
+
+# Python / Jupyter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# Sqoop generated code (codegen writes <table>.java into the working dir)
+L04_ingestion/work/
+L04_ingestion/*.java
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Internal build/QA logs (kept locally, not published)
+TESTING_STATUS_*.md

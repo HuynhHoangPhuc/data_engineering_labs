@@ -1,0 +1,284 @@
+# Capstone reference stack - run it in STAGES on an 8 GB laptop (see README section 3).
+#
+#   core (no profile)   postgres (OLTP, :5433), kafka (:9092), seaweedfs (S3 :8333), iceberg-rest (:8181)   ~1.3 GB
+#   --profile ingest    connect (Debezium :8083), spark (Spark Connect server :15002, UI :4040)             ~1.9 GB
+#   --profile batch     spark (Spark Connect) + airflow-db, airflow-init, airflow-apiserver (:8080),
+#                       scheduler, dag-processor                                                          ~1.5 GB + spark
+#   --profile serve     trino (:8085), metabase (:3000)                                                     ~2.2 GB measured
+#
+# All state lives in named volumes, so stopping one stage and starting the next keeps the data.
+
+x-s3-env: &s3-env
+  AWS_ACCESS_KEY_ID: lakeadmin
+  AWS_SECRET_ACCESS_KEY: lakepassword
+  AWS_REGION: us-east-1
+
+x-airflow-common: &airflow-common
+  build: ./airflow
+  image: de-labs/airflow:3.3.2-capstone
+  profiles: ["batch"]
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__PARALLELISM: 2
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-apiserver:8080/execution/"
+    AIRFLOW__API_AUTH__JWT_SECRET: "capstone-jwt-secret-change-me"
+    AIRFLOW__API__SECRET_KEY: "capstone-secret-key-change-me"
+    AIRFLOW__API__WORKERS: 1
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    SPARK_REMOTE: "sc://spark:15002"
+    CAPSTONE_JOBS_DIR: /opt/airflow/jobs
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./spark/jobs:/opt/airflow/jobs:ro
+    - airflow-logs:/opt/airflow/logs
+  user: "50000:0"
+
+services:
+  # ---------------------------------------------------------------- core
+  postgres:
+    image: postgres:18.6
+    container_name: cap-postgres
+    environment:
+      POSTGRES_USER: olist
+      POSTGRES_PASSWORD: olist
+      POSTGRES_DB: olist
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10",
+              "-c", "max_wal_senders=10", "-c", "max_slot_wal_keep_size=2GB"]
+    ports: ["5433:5432"]
+    volumes:
+      - ../datasets/olist/init:/docker-entrypoint-initdb.d:ro
+      - pg-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U olist -d olist"]
+      interval: 5s
+      retries: 20
+    mem_limit: 512m
+
+  kafka:
+    image: apache/kafka:4.3.1
+    container_name: cap-kafka
+    hostname: kafka
+    ports: ["9092:9092"]
+    environment:
+      CLUSTER_ID: "qN2eGJBfRJ6qdabptLJJiw"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_LISTENERS: "INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:29093"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka:19092,EXTERNAL://localhost:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_HEAP_OPTS: "-Xms384m -Xmx384m"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:19092 >/dev/null 2>&1"]
+      interval: 10s
+      retries: 20
+    mem_limit: 768m
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.44
+    container_name: cap-seaweedfs
+    command: >
+      server -dir=/data -ip=seaweedfs -ip.bind=0.0.0.0
+      -master.volumeSizeLimitMB=256 -volume.max=50
+      -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    ports: ["8333:8333", "8888:8888"]
+    volumes:
+      - ../L11_lakehouse_iceberg/seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+      - seaweed-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9333/cluster/status >/dev/null && wget -qO- http://localhost:8888/ >/dev/null"]
+      interval: 5s
+      retries: 30
+    mem_limit: 768m
+
+  create-bucket:
+    image: chrislusf/seaweedfs:4.44
+    container_name: cap-create-bucket
+    depends_on:
+      seaweedfs: {condition: service_healthy}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["sleep 3; echo 's3.bucket.create -name warehouse' | weed shell -master=seaweedfs:9333"]
+
+  iceberg-rest:
+    image: apache/iceberg-rest-fixture:1.10.1
+    container_name: cap-iceberg-rest
+    depends_on:
+      create-bucket: {condition: service_completed_successfully}
+    ports: ["8181:8181"]
+    environment:
+      <<: *s3-env
+      CATALOG_WAREHOUSE: s3://warehouse/
+      CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
+      CATALOG_S3_ENDPOINT: http://seaweedfs:8333
+      CATALOG_S3_PATH__STYLE__ACCESS: "true"
+      CATALOG_URI: jdbc:sqlite:file:/catalog/iceberg_catalog.db
+      CATALOG_JDBC_USER: user
+      CATALOG_JDBC_PASSWORD: password
+      JAVA_TOOL_OPTIONS: "-Xmx256m"
+    user: "0"
+    volumes:
+      - catalog-data:/catalog
+    mem_limit: 512m
+
+  # ---------------------------------------------------------------- ingest
+  connect:
+    image: quay.io/debezium/connect:3.6.3.Final
+    container_name: cap-connect
+    profiles: ["ingest"]
+    ports: ["8083:8083"]
+    depends_on:
+      kafka: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+    environment:
+      BOOTSTRAP_SERVERS: "kafka:19092"
+      GROUP_ID: "capstone-connect"
+      CONFIG_STORAGE_TOPIC: "_connect_configs"
+      OFFSET_STORAGE_TOPIC: "_connect_offsets"
+      STATUS_STORAGE_TOPIC: "_connect_statuses"
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      HEAP_OPTS: "-Xms256m -Xmx512m"
+    mem_limit: 1g
+
+  # Long-running Spark Connect server with Iceberg + Kafka packages (clients: pyspark-client, no JVM needed)
+  spark:
+    image: spark:4.1.3-python3
+    container_name: cap-spark
+    profiles: ["ingest", "batch"]
+    user: "0"
+    depends_on: [iceberg-rest]
+    environment:
+      <<: *s3-env
+      SPARK_NO_DAEMONIZE: "true"
+      SPARK_SUBMIT_OPTS: "-Divy.home=/root/.ivy2"
+    command: ["/opt/spark/sbin/start-connect-server.sh"]
+    ports:
+      - "15002:15002"   # Spark Connect (gRPC)
+      - "4040:4040"     # Spark UI
+    volumes:
+      - ./conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
+      - ivy-cache:/root/.ivy2
+      - spark-checkpoints:/checkpoints
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/15002'"]
+      interval: 10s
+      retries: 30
+      start_period: 60s
+    mem_limit: 2g
+
+  # ---------------------------------------------------------------- batch (Airflow)
+  airflow-db:
+    image: postgres:18.6
+    container_name: cap-airflow-db
+    profiles: ["batch"]
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 10
+    mem_limit: 256m
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: cap-airflow-init
+    entrypoint: /bin/bash
+    command: ["-c", "chown -R 50000:0 /opt/airflow/logs && /entrypoint airflow version"]
+    environment:
+      <<: *airflow-env
+      _AIRFLOW_DB_MIGRATE: "true"
+    user: "0:0"
+    depends_on:
+      airflow-db: {condition: service_healthy}
+
+  airflow-apiserver:
+    <<: *airflow-common
+    container_name: cap-airflow-apiserver
+    command: api-server
+    ports: ["8080:8080"]
+    restart: unless-stopped
+    depends_on:
+      airflow-init: {condition: service_completed_successfully}
+    mem_limit: 1g
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: cap-airflow-scheduler
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-init: {condition: service_completed_successfully}
+    mem_limit: 1g
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: cap-airflow-dag-processor
+    command: dag-processor
+    restart: unless-stopped
+    depends_on:
+      airflow-init: {condition: service_completed_successfully}
+    mem_limit: 768m
+
+  # ---------------------------------------------------------------- serve
+  trino:
+    image: trinodb/trino:483
+    container_name: cap-trino
+    profiles: ["serve"]
+    depends_on: [iceberg-rest]
+    ports: ["8085:8080"]
+    volumes:
+      - ../L11_lakehouse_iceberg/trino/catalog/lake.properties:/etc/trino/catalog/lake.properties:ro
+      - ../L11_lakehouse_iceberg/trino/jvm.config:/etc/trino/jvm.config:ro
+      - ../L11_lakehouse_iceberg/trino/config.properties:/etc/trino/config.properties:ro
+    mem_limit: 1600m
+
+  # Metabase ships the "Starburst (Trino)" driver (engine `starburst`) - no plugin jar needed.
+  # Connect it to host `trino`, port 8080 (container network), catalog `lake`, schema `gold` (README 6.3).
+  # Heap 768 MB, but the JVM's total RSS reaches ~1.15-1.2 GB after the first sync -> 1500m limit (1200m was at the edge).
+  metabase:
+    image: metabase/metabase:v0.63.18.1
+    container_name: cap-metabase
+    profiles: ["serve"]
+    depends_on: [trino]
+    ports: ["3000:3000"]
+    environment:
+      JAVA_OPTS: "-Xmx768m"
+      MB_DB_FILE: /metabase-data/metabase.db
+      MB_ANON_TRACKING_ENABLED: "false"
+    volumes:
+      - metabase-data:/metabase-data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:3000/api/health | grep -q ok"]
+      interval: 10s
+      retries: 30
+      start_period: 60s
+    mem_limit: 1500m
+
+volumes:
+  pg-data:
+  kafka-data:
+  seaweed-data:
+  catalog-data:
+  ivy-cache:
+  spark-checkpoints:
+  airflow-db:
+  airflow-logs:
+  metabase-data:

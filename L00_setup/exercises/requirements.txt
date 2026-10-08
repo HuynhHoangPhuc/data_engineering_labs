@@ -1,0 +1,6 @@
+# L00 Foundations exercises (c) and (e). Python 3.10+ (tested with 3.12).
+# pandas 3.x needs Python >= 3.11; on 3.10 pip picks pandas 2.x automatically - both work here.
+pandas>=2.2
+pyarrow>=18
+polars>=1.20
+duckdb>=1.3

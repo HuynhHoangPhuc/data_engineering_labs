@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!-- MapReduce on YARN (L01/L02) -->
+<configuration>
+  <!-- Submit jobs to YARN -->
+  <property><name>mapreduce.framework.name</name><value>yarn</value></property>
+  <property><name>yarn.app.mapreduce.am.env</name><value>HADOOP_MAPRED_HOME=/opt/hadoop</value></property>
+  <property><name>mapreduce.map.env</name><value>HADOOP_MAPRED_HOME=/opt/hadoop</value></property>
+  <property><name>mapreduce.reduce.env</name><value>HADOOP_MAPRED_HOME=/opt/hadoop</value></property>
+  <!-- ApplicationMaster container -->
+  <property><name>yarn.app.mapreduce.am.resource.mb</name><value>512</value></property>
+  <property><name>yarn.app.mapreduce.am.command-opts</name><value>-Xmx384m</value></property>
+  <!-- Map task container size -->
+  <property><name>mapreduce.map.memory.mb</name><value>384</value></property>
+  <property><name>mapreduce.map.java.opts</name><value>-Xmx288m</value></property>
+  <!-- Reduce task container size -->
+  <property><name>mapreduce.reduce.memory.mb</name><value>384</value></property>
+  <property><name>mapreduce.reduce.java.opts</name><value>-Xmx288m</value></property>
+  <!-- Map-side sort buffer (must fit inside the map heap) -->
+  <property><name>mapreduce.task.io.sort.mb</name><value>64</value></property>
+  <property><name>yarn.app.mapreduce.am.staging-dir</name><value>/tmp/hadoop-yarn/staging</value></property>
+  <property><name>mapreduce.jobhistory.address</name><value>historyserver:10020</value></property>
+  <property><name>mapreduce.jobhistory.webapp.address</name><value>historyserver:19888</value></property>
+  <property><name>mapreduce.jobhistory.bind-host</name><value>0.0.0.0</value></property>
+  <property><name>mapreduce.jobhistory.intermediate-done-dir</name><value>/mr-history/tmp</value></property>
+  <property><name>mapreduce.jobhistory.done-dir</name><value>/mr-history/done</value></property>
+</configuration>

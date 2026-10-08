@@ -1,0 +1,155 @@
+# L04 — Ingestion from an OLTP database: Sqoop (legacy) vs Spark JDBC
+#   postgres   : Olist OLTP source, seeded from labs/datasets/olist/init (logs every SQL statement!)
+#   namenode + datanode : HDFS target (de-labs/hadoop:3.4.3, replication 1)
+#   sqoop      : Sqoop 1.4.7 client (de-labs/sqoop:1.4.7, built from labs/images/sqoop); MapReduce runs
+#                in-process (LocalJobRunner) -- no YARN needed
+#   spark      : Spark 4.1.3 client (official "spark:4.1.3-python3" image), local mode, UI :4040
+# RAM ≈ 2.5 GB while a Sqoop or Spark job runs.
+#
+#   docker compose up -d --build
+#   docker compose exec sqoop bash
+#   docker compose exec spark bash
+name: l04_ingestion
+
+services:
+  postgres:
+    image: postgres:18.6
+    hostname: postgres
+    environment:
+      POSTGRES_USER: olist
+      POSTGRES_PASSWORD: olist
+      POSTGRES_DB: olist
+    # log_statement=all -> `docker compose logs postgres` shows the exact SQL that Sqoop/Spark send
+    command: ["postgres", "-c", "log_statement=all", "-c", "log_line_prefix=%m [%a] "]
+    ports:
+      - "5432:5432"
+    volumes:
+      - ../datasets/olist/init:/docker-entrypoint-initdb.d:ro
+      - ./sql:/lab/sql:ro
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U olist -d olist"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  namenode:
+    image: de-labs/hadoop:3.4.3
+    build: ../images/hadoop
+    hostname: namenode
+    command: ["namenode"]
+    environment:
+      HDFS_NAMENODE_OPTS: "-Xmx384m"
+    ports:
+      - "9870:9870"
+    volumes:
+      - namenode:/hadoop/dfs/name
+    healthcheck:
+      test: ["CMD-SHELL", "hdfs dfsadmin -safemode get 2>/dev/null | grep -q OFF"]
+      interval: 5s
+      timeout: 10s
+      retries: 40
+
+  datanode:
+    image: de-labs/hadoop:3.4.3
+    hostname: datanode
+    command: ["datanode"]
+    environment:
+      HDFS_DATANODE_OPTS: "-Xmx256m"
+    volumes:
+      - datanode:/hadoop/dfs/data
+    depends_on:
+      - namenode
+
+  resourcemanager:
+    image: de-labs/hadoop:3.4.3
+    hostname: resourcemanager
+    command: ["resourcemanager"]
+    environment:
+      YARN_RESOURCEMANAGER_OPTS: "-Xmx320m"
+    ports:
+      - "8088:8088"
+    volumes: &yarn-conf
+      - ../L01_hdfs/conf/yarn-site.xml:/opt/hadoop/etc/hadoop/yarn-site.xml:ro
+      - ../L01_hdfs/conf/mapred-site.xml:/opt/hadoop/etc/hadoop/mapred-site.xml:ro
+    depends_on:
+      namenode:
+        condition: service_healthy
+
+  nodemanager:
+    image: de-labs/hadoop:3.4.3
+    hostname: nodemanager
+    command: ["nodemanager"]
+    environment:
+      YARN_NODEMANAGER_OPTS: "-Xmx256m"
+    volumes: *yarn-conf
+    depends_on:
+      - resourcemanager
+
+  historyserver:
+    image: de-labs/hadoop:3.4.3
+    hostname: historyserver
+    command: ["historyserver"]
+    environment:
+      MAPRED_HISTORYSERVER_OPTS: "-Xmx160m"
+    ports:
+      - "19888:19888"
+    volumes: *yarn-conf
+    depends_on:
+      namenode:
+        condition: service_healthy
+
+  sqoop:
+    image: de-labs/sqoop:1.4.7
+    build: ../images/sqoop
+    hostname: sqoop
+    command: ["sleep", "infinity"]
+    environment:
+      HADOOP_CLIENT_OPTS: "-Xmx512m"
+    volumes:
+      - ./:/lab
+      - ../L01_hdfs/conf/yarn-site.xml:/opt/hadoop/etc/hadoop/yarn-site.xml:ro
+      - ../L01_hdfs/conf/mapred-site.xml:/opt/hadoop/etc/hadoop/mapred-site.xml:ro
+    depends_on:
+      namenode:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  # One-shot helper: PostgreSQL JDBC driver for Spark (shared volume), then exits.
+  jdbc-driver:
+    image: de-labs/hadoop:3.4.3
+    command: ["bash", "-c", "test -s /jars/postgresql.jar || curl -fsSL --retry 3 -o /jars/postgresql.jar https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.8/postgresql-42.7.8.jar; ls -l /jars"]
+    volumes:
+      - jars:/jars
+    restart: "no"
+
+  spark:
+    image: spark:4.1.3-python3
+    hostname: spark
+    command: ["sleep", "infinity"]
+    user: "185"
+    environment:
+      HOME: /tmp
+      PYSPARK_PYTHON: python3
+      PATH: /opt/spark/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    ports:
+      - "4040:4040"   # Spark UI (only while a Spark application runs)
+    volumes:
+      - ./:/lab
+      - jars:/jars:ro
+      - ./conf/log4j2.properties:/opt/spark/conf/log4j2.properties:ro
+    working_dir: /lab
+    depends_on:
+      jdbc-driver:
+        condition: service_completed_successfully
+      namenode:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  namenode:
+  datanode:
+  jars:

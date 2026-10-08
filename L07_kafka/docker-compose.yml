@@ -1,0 +1,90 @@
+# L07 - Apache Kafka 4.x, 3 brokers in KRaft *combined* mode (broker + controller
+# in the same JVM). No ZooKeeper - Kafka 4.x is KRaft-only.
+#
+# Memory budget (8 GB Mac, ~4-6 GB for Docker):
+#   3 x Kafka (384 MB heap, ~600 MB RSS each)  ~= 1.8 GB
+#   Kafbat UI (optional, profile "ui")          ~= 0.4 GB
+#
+# Listeners
+#   INTERNAL   kafkaN:19092  broker <-> broker and container clients
+#   EXTERNAL   localhost:9092/9093/9094  clients on your laptop (Python scripts)
+#   CONTROLLER kafkaN:29093  KRaft Raft quorum traffic (never published to the host)
+
+x-kafka-common: &kafka-common
+  image: apache/kafka:4.3.1
+  restart: unless-stopped
+  mem_limit: 768m
+  environment: &kafka-env
+    CLUSTER_ID: "cQDxtDc8SBys_-Nk_98Zvw"
+    KAFKA_PROCESS_ROLES: "broker,controller"
+    KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:29093,2@kafka2:29093,3@kafka3:29093"
+    KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+    KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT"
+    # Durability defaults for the whole cluster
+    KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+    KAFKA_MIN_INSYNC_REPLICAS: 2
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+    KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    KAFKA_NUM_PARTITIONS: 3
+    # Small heap - this is a laptop lab, not production
+    KAFKA_HEAP_OPTS: "-Xms384m -Xmx384m"
+    KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+
+services:
+  kafka1:
+    <<: *kafka-common
+    hostname: kafka1
+    container_name: l07-kafka1
+    ports: ["9092:9092"]
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENERS: "INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:29093"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka1:19092,EXTERNAL://localhost:9092"
+    volumes: ["kafka1-data:/var/lib/kafka/data"]
+
+  kafka2:
+    <<: *kafka-common
+    hostname: kafka2
+    container_name: l07-kafka2
+    ports: ["9093:9093"]
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 2
+      KAFKA_LISTENERS: "INTERNAL://:19092,EXTERNAL://:9093,CONTROLLER://:29093"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka2:19092,EXTERNAL://localhost:9093"
+    volumes: ["kafka2-data:/var/lib/kafka/data"]
+
+  kafka3:
+    <<: *kafka-common
+    hostname: kafka3
+    container_name: l07-kafka3
+    ports: ["9094:9094"]
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 3
+      KAFKA_LISTENERS: "INTERNAL://:19092,EXTERNAL://:9094,CONTROLLER://:29093"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka3:19092,EXTERNAL://localhost:9094"
+    volumes: ["kafka3-data:/var/lib/kafka/data"]
+
+  # Optional web UI:  docker compose --profile ui up -d
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.5.0
+    container_name: l07-kafka-ui
+    profiles: ["ui"]
+    mem_limit: 512m
+    ports: ["8080:8080"]
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "l07-kraft"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka1:19092,kafka2:19092,kafka3:19092"
+      JAVA_OPTS: "-Xmx256m"
+    depends_on: [kafka1, kafka2, kafka3]
+
+volumes:
+  kafka1-data:
+  kafka2-data:
+  kafka3-data:

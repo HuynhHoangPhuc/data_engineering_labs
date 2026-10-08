@@ -1,0 +1,62 @@
+# L09 - Wikimedia -> Kafka -> Spark Structured Streaming -> Parquet
+#
+# Memory budget (~2.3 GB):  kafka ~500 MB | spark driver (local[2], 1 GB heap) ~1.5 GB
+# The Python producer runs on your laptop and talks to Kafka on localhost:9092.
+
+services:
+  kafka:
+    image: apache/kafka:4.3.1
+    container_name: l09-kafka
+    hostname: kafka
+    ports: ["9092:9092"]
+    environment:
+      CLUSTER_ID: "bXITX6YcRKKf9Z02L4F6jQ"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_LISTENERS: "INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:29093"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka:19092,EXTERNAL://localhost:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: "-Xms384m -Xmx384m"
+      # keep the topic small on a laptop: 2 hours / 512 MB per partition
+      KAFKA_LOG_RETENTION_HOURS: 2
+      KAFKA_LOG_RETENTION_BYTES: 536870912
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:19092 >/dev/null 2>&1"]
+      interval: 10s
+      retries: 20
+    mem_limit: 768m
+
+  spark:
+    # Docker Official Image (same Apache build as apache/spark:4.1.3-python3); 4.1.x because the
+    # Iceberg runtime (L11) does not support Spark 4.2 yet - one Spark image for L09/L11/capstone.
+    image: spark:4.1.3-python3
+    container_name: l09-spark
+    # root so that spark-submit can write the Ivy cache (--packages) and the bind mounts
+    user: "0"
+    command: ["tail", "-f", "/dev/null"]     # idle; we run spark-submit with `docker compose exec`
+    working_dir: /opt/lab
+    environment:
+      KAFKA_BOOTSTRAP: "kafka:19092"
+      LAB_DIR: "/opt/lab"
+      SPARK_SUBMIT_OPTS: "-Divy.home=/root/.ivy2"
+      PYSPARK_PYTHON: "python3"
+    ports:
+      - "4040:4040"     # Spark UI of the running application (Structured Streaming tab)
+    volumes:
+      - ./:/opt/lab                  # code, output/ and checkpoints/ live on your laptop
+      - ivy-cache:/root/.ivy2        # --packages jars are downloaded once
+      - ./conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
+    depends_on:
+      kafka: {condition: service_healthy}
+    mem_limit: 2g
+
+volumes:
+  ivy-cache:

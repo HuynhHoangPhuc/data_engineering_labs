@@ -1,0 +1,111 @@
+# L01 (HDFS) + L02 (MapReduce) cluster
+#   1 NameNode, 3 DataNodes, 1 ResourceManager, 1 NodeManager, 1 JobHistory server
+#   Total memory ~3.5 GB with a running MapReduce job (fits Docker Desktop at 4-6 GB).
+#
+#   docker compose up -d --build     # first run builds de-labs/hadoop:3.4.3 (~3-6 min)
+#   docker compose ps
+#   docker compose down -v           # stop AND wipe HDFS (volumes)
+name: l01_hdfs
+
+x-hadoop: &hadoop
+  image: de-labs/hadoop:3.4.3
+  restart: "no"
+  # Same config on every daemon; students edit ./conf/*.xml and restart.
+  volumes: &common-volumes
+    - ./conf/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+    - ./conf/yarn-site.xml:/opt/hadoop/etc/hadoop/yarn-site.xml:ro
+    - ./conf/mapred-site.xml:/opt/hadoop/etc/hadoop/mapred-site.xml:ro
+    - ../datasets:/datasets            # taxi data + parquet_to_csv.py
+    - ../L02_mapreduce:/lab/L02        # MapReduce code for L02
+    - ./solutions:/lab/L01/solutions:ro
+
+x-datanode-env: &dn-env
+  HDFS_DATANODE_OPTS: "-Xmx192m"
+
+services:
+  namenode:
+    <<: *hadoop
+    build: ../images/hadoop           # only this service builds the shared image
+    hostname: namenode
+    command: ["namenode"]
+    environment:
+      HDFS_NAMENODE_OPTS: "-Xmx384m"
+    ports:
+      - "9870:9870"   # NameNode web UI
+      - "8020:8020"   # HDFS RPC (optional, for host clients)
+    volumes:
+      - ./conf/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+      - ./conf/yarn-site.xml:/opt/hadoop/etc/hadoop/yarn-site.xml:ro
+      - ./conf/mapred-site.xml:/opt/hadoop/etc/hadoop/mapred-site.xml:ro
+      - ../datasets:/datasets
+      - ../L02_mapreduce:/lab/L02
+      - ./solutions:/lab/L01/solutions:ro
+      - namenode:/hadoop/dfs/name
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9870/ >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  datanode1:
+    <<: *hadoop
+    hostname: datanode1
+    command: ["datanode"]
+    environment: *dn-env
+    volumes:
+      - ./conf/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+      - ../datasets:/datasets
+      - datanode1:/hadoop/dfs/data
+
+  datanode2:
+    <<: *hadoop
+    hostname: datanode2
+    command: ["datanode"]
+    environment: *dn-env
+    volumes:
+      - ./conf/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+      - ../datasets:/datasets
+      - datanode2:/hadoop/dfs/data
+
+  datanode3:
+    <<: *hadoop
+    hostname: datanode3
+    command: ["datanode"]
+    environment: *dn-env
+    volumes:
+      - ./conf/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+      - ../datasets:/datasets
+      - datanode3:/hadoop/dfs/data
+
+  resourcemanager:
+    <<: *hadoop
+    hostname: resourcemanager
+    command: ["resourcemanager"]
+    environment:
+      YARN_RESOURCEMANAGER_OPTS: "-Xmx384m"
+    ports:
+      - "8088:8088"   # YARN ResourceManager web UI
+
+  nodemanager:
+    <<: *hadoop
+    hostname: nodemanager
+    command: ["nodemanager"]
+    environment:
+      YARN_NODEMANAGER_OPTS: "-Xmx256m"
+    ports:
+      - "8042:8042"   # NodeManager web UI (container logs)
+
+  historyserver:
+    <<: *hadoop
+    hostname: historyserver
+    command: ["historyserver"]
+    environment:
+      MAPRED_HISTORYSERVER_OPTS: "-Xmx192m"
+    ports:
+      - "19888:19888" # MapReduce JobHistory web UI
+
+volumes:
+  namenode:
+  datanode1:
+  datanode2:
+  datanode3:

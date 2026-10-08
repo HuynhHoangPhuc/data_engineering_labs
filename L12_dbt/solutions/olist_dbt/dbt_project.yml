@@ -1,0 +1,43 @@
+# L12 - Olist star schema with dbt (dbt-core + dbt-postgres)
+name: olist
+version: "1.0.0"
+config-version: 2
+profile: olist
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+analysis-paths: ["analyses"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+# Layers -> Postgres schemas (see macros/generate_schema_name.sql)
+models:
+  olist:
+    staging:
+      +schema: staging
+      +materialized: view         # thin 1:1 cleanup of each source table
+    intermediate:
+      +schema: intermediate
+      +materialized: ephemeral    # inlined as CTEs, never stored
+    marts:
+      +schema: marts
+      +materialized: table        # what BI tools query
+
+seeds:
+  olist:
+    +schema: seeds
+    brazil_states:
+      +column_types: {state_code: char(2)}
+
+snapshots:
+  olist:
+    # +schema (not the legacy +target_schema) so snapshots also go through generate_schema_name
+    # -> 'snapshots' in dev, 'ci_snapshots' in CI
+    +schema: snapshots
+
+# Project-wide variables (override: dbt run --vars '{late_threshold_days: 3}')
+vars:
+  late_threshold_days: 0

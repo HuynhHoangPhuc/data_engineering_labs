@@ -1,0 +1,35 @@
+# Marquez API configuration (Dropwizard). Based on marquez.dev.yml of Marquez 0.50.0,
+# without OpenSearch (search disabled to save ~1 GB of RAM).
+server:
+  applicationConnectors:
+    - type: http
+      port: 5000
+      httpCompliance: RFC7230_LEGACY
+  adminConnectors:
+    - type: http
+      port: 5001
+
+db:
+  driverClass: org.postgresql.Driver
+  url: jdbc:postgresql://${POSTGRES_HOST:-marquez-db}:${POSTGRES_PORT:-5432}/marquez
+  user: marquez
+  password: marquez
+
+migrateOnStartup: true
+
+graphql:
+  enabled: true
+
+search:
+  enabled: false
+
+logging:
+  level: INFO
+  appenders:
+    - type: console
+
+tags:
+  - name: PII
+    description: Personally identifiable information
+  - name: SENSITIVE
+    description: Contains sensitive information

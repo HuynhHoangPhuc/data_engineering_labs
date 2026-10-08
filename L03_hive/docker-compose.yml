@@ -1,0 +1,120 @@
+# L03 — Hive 4 on HDFS
+#   namenode + datanode      : HDFS (course image de-labs/hadoop:3.4.3, replication 1)
+#   postgres                 : relational DB that STORES the Hive metastore (table/partition metadata)
+#   metastore                : Hive Metastore service (Thrift :9083)  -- apache/hive:4.2.1
+#   hiveserver2              : SQL endpoint (JDBC :10000, web UI :10002); runs queries with Tez in local mode
+# RAM ≈ 3 GB under load.  First start: ~1-2 min (schema init).
+#
+#   docker compose up -d --build
+#   docker compose exec hiveserver2 beeline -u jdbc:hive2://localhost:10000/ -n hive
+name: l03_hive
+
+services:
+  namenode:
+    image: de-labs/hadoop:3.4.3
+    build: ../images/hadoop
+    hostname: namenode
+    command: ["namenode"]
+    environment:
+      HDFS_NAMENODE_OPTS: "-Xmx384m"
+    ports:
+      - "9870:9870"
+    volumes:
+      - ../datasets:/datasets
+      - namenode:/hadoop/dfs/name
+    healthcheck:
+      test: ["CMD-SHELL", "hdfs dfsadmin -safemode get 2>/dev/null | grep -q OFF"]
+      interval: 5s
+      timeout: 10s
+      retries: 40
+
+  datanode:
+    image: de-labs/hadoop:3.4.3
+    hostname: datanode
+    command: ["datanode"]
+    environment:
+      HDFS_DATANODE_OPTS: "-Xmx256m"
+    volumes:
+      - datanode:/hadoop/dfs/data
+    depends_on:
+      - namenode
+
+  # One-shot helper: downloads the PostgreSQL JDBC driver the metastore needs
+  # (the apache/hive image does not ship it) into a shared volume, then exits.
+  jdbc-driver:
+    image: de-labs/hadoop:3.4.3
+    command: ["bash", "-c", "test -s /ext-jars/postgresql.jar || curl -fsSL --retry 3 -o /ext-jars/postgresql.jar https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.8/postgresql-42.7.8.jar; ls -l /ext-jars"]
+    volumes:
+      - ext-jars:/ext-jars
+    restart: "no"
+
+  postgres:
+    image: postgres:18.6
+    environment:
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+      POSTGRES_DB: metastore
+    volumes:
+      - metastore-db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive -d metastore"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  metastore:
+    image: apache/hive:4.2.1
+    hostname: metastore
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      HIVE_CUSTOM_CONF_DIR: /hive_custom_conf
+      DEFAULT_FS: hdfs://namenode:8020
+      HIVE_WAREHOUSE_PATH: /user/hive/warehouse
+      SERVICE_OPTS: >-
+        -Xmx384m
+        -Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver
+        -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://postgres:5432/metastore
+        -Djavax.jdo.option.ConnectionUserName=hive
+        -Djavax.jdo.option.ConnectionPassword=hive
+    volumes:
+      - ./conf:/hive_custom_conf:ro
+      - ext-jars:/tmp/ext-jars:ro
+    ports:
+      - "9083:9083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      namenode:
+        condition: service_healthy
+      jdbc-driver:
+        condition: service_completed_successfully
+
+  hiveserver2:
+    image: apache/hive:4.2.1
+    hostname: hiveserver2
+    environment:
+      SERVICE_NAME: hiveserver2
+      IS_RESUME: "true"            # schema is initialised by the metastore service, not here
+      HIVE_CUSTOM_CONF_DIR: /hive_custom_conf
+      DEFAULT_FS: hdfs://namenode:8020
+      HIVE_WAREHOUSE_PATH: /user/hive/warehouse
+      HIVE_SCRATCH_DIR: /tmp/hive
+      SERVICE_OPTS: >-
+        -Xmx1536m
+        -Dhive.metastore.uris=thrift://metastore:9083
+    volumes:
+      - ./conf:/hive_custom_conf:ro
+      - ./sql:/sql:ro
+      - ./solutions:/solutions:ro
+    ports:
+      - "10000:10000"   # JDBC / beeline
+      - "10002:10002"   # HiveServer2 web UI
+    depends_on:
+      - metastore
+
+volumes:
+  namenode:
+  datanode:
+  metastore-db:
+  ext-jars:

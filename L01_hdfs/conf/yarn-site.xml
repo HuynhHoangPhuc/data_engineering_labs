@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!-- YARN: 1 ResourceManager + 1 NodeManager (small memory footprint) -->
+<configuration>
+  <property><name>yarn.resourcemanager.hostname</name><value>resourcemanager</value></property>
+  <property><name>yarn.resourcemanager.bind-host</name><value>0.0.0.0</value></property>
+  <property><name>yarn.nodemanager.bind-host</name><value>0.0.0.0</value></property>
+  <!-- Shuffle service used by MapReduce reducers -->
+  <property><name>yarn.nodemanager.aux-services</name><value>mapreduce_shuffle</value></property>
+  <!-- Memory the single NodeManager offers to containers (fits an 8 GB laptop) -->
+  <property><name>yarn.nodemanager.resource.memory-mb</name><value>1536</value></property>
+  <property><name>yarn.nodemanager.resource.cpu-vcores</name><value>4</value></property>
+  <property><name>yarn.scheduler.minimum-allocation-mb</name><value>128</value></property>
+  <property><name>yarn.scheduler.maximum-allocation-mb</name><value>1536</value></property>
+  <!-- Virtual-memory check kills JVMs spuriously inside Docker -->
+  <property><name>yarn.nodemanager.vmem-check-enabled</name><value>false</value></property>
+  <property><name>yarn.nodemanager.local-dirs</name><value>/hadoop/yarn/local</value></property>
+  <property><name>yarn.nodemanager.log-dirs</name><value>/hadoop/yarn/logs</value></property>
+  <!-- Copy container logs to HDFS so the history server can show them -->
+  <property><name>yarn.log-aggregation-enable</name><value>true</value></property>
+  <property><name>yarn.log.server.url</name><value>http://historyserver:19888/jobhistory/logs</value></property>
+  <property><name>yarn.nodemanager.env-whitelist</name><value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_DIR,CLASSPATH_PREPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_HOME,PATH,LANG,TZ,HADOOP_MAPRED_HOME</value></property>
+</configuration>

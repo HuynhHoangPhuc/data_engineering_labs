@@ -1,0 +1,5 @@
+# L13 host-side tools (Python 3.10-3.13; tested with 3.12)
+great_expectations==1.24.0   # GX Core 1.x (pulls pandas, numpy, scipy, altair ...)
+duckdb==1.5.6
+pyarrow==25.0.1
+requests==2.34.2

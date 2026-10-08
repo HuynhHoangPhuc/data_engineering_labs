@@ -1,0 +1,102 @@
+# L13 - Data quality, observability & lineage.
+# Parts 1 and 4 (Great Expectations) run in a Python venv on your laptop - no containers needed.
+# The containers are split into PROFILES so each part fits in ~4 GB of Docker memory:
+#
+#   docker compose --profile monitor up -d    # Part 2/4: alert-receiver (webhook that logs alerts)   ~30 MB
+#   docker compose --profile lineage up -d    # Part 3: Marquez (db + api + web) + Spark  ~1.5 GB measured
+#   docker compose --profile spark   up -d    # Part 3 fallback: Spark only, OpenLineage -> JSON file ~0.9 GB
+#
+#   docker compose --profile "*" down -v      # stop everything of this lab and delete its volumes
+name: l13_data_quality
+
+services:
+  # ---------------------------------------------------------------- Part 2 / 4: alerting
+  alert-receiver:
+    image: python:3.12-alpine
+    container_name: l13-alert-receiver
+    profiles: ["monitor"]
+    command: ["python", "-u", "/app/webhook_receiver.py", "--port", "9099", "--log", "/data/alerts.jsonl"]
+    ports: ["9099:9099"]
+    volumes:
+      - ./scripts/webhook_receiver.py:/app/webhook_receiver.py:ro
+      - ./data:/data
+    mem_limit: 64m
+
+  # ---------------------------------------------------------------- Part 3: lineage (OpenLineage -> Marquez)
+  marquez-db:
+    image: postgres:18.6
+    container_name: l13-marquez-db
+    profiles: ["lineage"]
+    environment:
+      POSTGRES_USER: marquez
+      POSTGRES_PASSWORD: marquez
+      POSTGRES_DB: marquez
+    volumes:
+      - marquez-db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marquez -d marquez"]
+      interval: 5s
+      retries: 20
+    mem_limit: 384m
+
+  marquez-api:
+    # Official marquezproject/marquez images are amd64-only, so we build a native (arm64 + amd64) image
+    # from the release jar published on Maven Central - see marquez/Dockerfile.
+    build: ./marquez
+    image: de-labs/marquez-api:0.50.0
+    container_name: l13-marquez-api
+    profiles: ["lineage"]
+    environment:
+      POSTGRES_HOST: marquez-db
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx320m"
+    ports:
+      - "5050:5000"     # Marquez REST API (host 5050: macOS AirPlay Receiver already uses 5000)
+      - "5051:5001"     # admin: /healthcheck, /metrics
+    depends_on:
+      marquez-db: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:5001/healthcheck >/dev/null"]
+      interval: 10s
+      start_period: 30s
+      retries: 20
+    mem_limit: 512m
+
+  marquez-web:
+    # amd64-only image -> runs under emulation on Apple Silicon (Rosetta/QEMU). It is a small Node.js
+    # server that serves the React UI and proxies /api to marquez-api.
+    image: marquezproject/marquez-web:0.50.0
+    platform: linux/amd64
+    container_name: l13-marquez-web
+    profiles: ["lineage"]
+    environment:
+      MARQUEZ_HOST: marquez-api
+      MARQUEZ_PORT: "5000"
+      WEB_PORT: "3000"
+    ports: ["3000:3000"]
+    depends_on:
+      marquez-api: {condition: service_healthy}
+    mem_limit: 384m
+
+  spark:
+    image: spark:4.1.3-python3          # shared course image (Java 17, Scala 2.13, Python 3.10)
+    container_name: l13-spark
+    profiles: ["lineage", "spark"]
+    user: "0"
+    command: ["tail", "-f", "/dev/null"]   # idle; run jobs with `docker compose exec spark spark-submit ...`
+    working_dir: /lab
+    environment:
+      PYSPARK_PYTHON: python3
+      SPARK_SUBMIT_OPTS: "-Divy.home=/root/.ivy2"
+      PATH: /opt/spark/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    ports: ["4040:4040"]
+    volumes:
+      - ../datasets:/datasets:ro
+      - ./:/lab
+      - ivy-cache:/root/.ivy2          # --packages jars (OpenLineage) are downloaded once
+      - ./conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
+      - ./conf/log4j2.properties:/opt/spark/conf/log4j2.properties:ro
+    mem_limit: 1800m
+
+volumes:
+  marquez-db:
+  ivy-cache:

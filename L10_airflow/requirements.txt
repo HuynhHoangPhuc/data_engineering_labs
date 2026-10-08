@@ -1,0 +1,2 @@
+# Extra Python packages baked into the lab's Airflow image (see Dockerfile)
+duckdb==1.5.5

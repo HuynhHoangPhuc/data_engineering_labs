@@ -1,0 +1,3 @@
+# dbt Core + the Postgres adapter (tested: dbt-core 1.12.5, dbt-postgres 1.11.0, Python 3.12)
+dbt-core>=1.10,<2
+dbt-postgres>=1.9,<2

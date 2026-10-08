@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!-- Base hdfs-site: single DataNode stacks (L03, L04) -->
+<configuration>
+  <!-- Only one DataNode in L03/L04 stacks -->
+  <property><name>dfs.replication</name><value>1</value></property>
+  <!-- NameNode metadata (fsimage + edits) lives in a Docker volume -->
+  <property><name>dfs.namenode.name.dir</name><value>file:///hadoop/dfs/name</value></property>
+  <!-- Block files on each DataNode -->
+  <property><name>dfs.datanode.data.dir</name><value>file:///hadoop/dfs/data</value></property>
+  <!-- Lab convenience: no HDFS permission checks (NEVER in production) -->
+  <property><name>dfs.permissions.enabled</name><value>false</value></property>
+  <property><name>dfs.namenode.rpc-bind-host</name><value>0.0.0.0</value></property>
+  <property><name>dfs.namenode.servicerpc-bind-host</name><value>0.0.0.0</value></property>
+  <property><name>dfs.namenode.http-bind-host</name><value>0.0.0.0</value></property>
+  <!-- Docker IPs do not reverse-resolve -->
+  <property><name>dfs.namenode.datanode.registration.ip-hostname-check</name><value>false</value></property>
+  <!-- Leave safe mode 5 s after the block threshold is reached (default 30 s) -->
+  <property><name>dfs.namenode.safemode.extension</name><value>5000</value></property>
+  <property><name>dfs.webhdfs.enabled</name><value>true</value></property>
+</configuration>
